@@ -1,1 +1,451 @@
 
+name: Build Kali NetHunter Titan OC Kernel (Powered by Plabon)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Setup Build Environment & Dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y build-essential bc bison flex libssl-dev libncurses5-dev \
+                              libelf-dev libfl-dev git ccache zip curl libtinfo5 python3
+
+      # ১. কম্পাইলার ক্লোন (AOSP GCC 4.9 Toolchains)
+      - name: Clone AOSP GCC 4.9 Toolchains
+        run: |
+          git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 -b lineage-19.1 gcc64
+          git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 -b lineage-19.1 gcc32
+
+      # ২. আপনার নতুন অ্যাকাউন্টের ফর্ক থেকে m11-titan ব্রাঞ্চ ক্লোন
+      - name: Clone Samsung M11 Kernel Source
+        run: |
+          git clone -b m11-titan --depth=1 https://github.com/snigdharoyofficialcenter/android_kernel_samsung_sdm450.git kernel
+          cd kernel
+          git submodule update --init --recursive || true
+          cd ..
+
+      # ৩. AnyKernel3 কনফিগারেশন (System + Vendor ড্রাইভার অটো-ইন্সটল ও পারমিশন ফিক্স)
+      - name: Setup AnyKernel3 Flasher with Driver & Module Injection
+        run: |
+          git clone https://github.com/osm0sis/AnyKernel3 AnyKernel3
+          cat << 'EOF' > AnyKernel3/anykernel.sh
+          ### AnyKernel3 Ramdisk Mod Script
+          ## Custom NetHunter Titan Extreme Edition by Plabon Roy
+          properties() { '
+          kernel.string=Kali NetHunter Titan OC by Plabon Roy
+          do.devicecheck=1
+          do.modules=0
+          do.systemless=0
+          do.cleanup=1
+          do.cleanuponabort=1
+          device.name1=sdm450
+          device.name2=m11q
+          device.name3=a11q
+          '; }
+          boot_attributes() {
+          set_perm_recursive 0 0 755 644 $RAMDISK/*;
+          set_perm_recursive 0 0 750 750 $RAMDISK/init* $RAMDISK/sbin;
+          }
+          BLOCK=/dev/block/by-name/boot;
+          IS_SLOT_DEVICE=0;
+          RAMDISK_COMPRESSION=auto;
+          PATCH_VBMETA_FLAG=auto;
+          . tools/ak3-core.sh;
+
+          ui_print " ";
+          ui_print "============================================";
+          ui_print " KALI NETHUNTER TITAN EXTREME MASTER OC ";
+          ui_print " CPU: 2.016GHz Max | GPU: 650MHz Turbo ";
+          ui_print "============================================";
+          ui_print " [•] Lead Developer : Plabon Roy";
+          ui_print " [•] GitHub Profile : github.com/plabonroyofficial";
+          ui_print " [•] Kernel Build : Linux 4.9 NetHunter Titan";
+          ui_print " [•] Capabilities : WiFi Injection | BadUSB | BT";
+          ui_print "============================================";
+          ui_print " ";
+
+          dump_boot;
+          write_boot;
+
+          # System & Vendor এ RTL8188FU ও ফার্মওয়্যার ডাবল পাথ ইনস্টলেশন
+          ui_print " [•] Injecting Drivers to /system and /vendor...";
+          mount -o rw,remount /system 2>/dev/null || mount -o rw,remount /system_root 2>/dev/null || true
+          mount -o rw,remount /vendor 2>/dev/null || true
+
+          # ১. ডিরেক্টরি তৈরি করা
+          mkdir -p /system/lib/modules /vendor/lib/modules /system/vendor/lib/modules
+          mkdir -p /vendor/firmware/rtlwifi /system/etc/firmware/rtlwifi /lib/firmware/rtlwifi /etc/firmware/rtlwifi
+
+          # ২. সব ফোল্ডারের জন্য 755 পারমিশন নিশ্চিত করা
+          chmod 755 /system/lib/modules /vendor/lib/modules /system/vendor/lib/modules
+          chmod 755 /vendor/firmware /vendor/firmware/rtlwifi
+          chmod 755 /system/etc/firmware /system/etc/firmware/rtlwifi
+          chmod 755 /lib/firmware /lib/firmware/rtlwifi
+          chmod 755 /etc/firmware /etc/firmware/rtlwifi
+
+          # ৩. .ko ড্রাইভার ফাইল কপি করা
+          cp -f /tmp/anykernel/rtl8188fu.ko /system/lib/modules/ 2>/dev/null || true
+          cp -f /tmp/anykernel/rtl8188fu.ko /vendor/lib/modules/ 2>/dev/null || true
+          cp -f /tmp/anykernel/rtl8188fu.ko /system/vendor/lib/modules/ 2>/dev/null || true
+
+          # ৪. ফার্মওয়্যার .bin ফাইল কপি করা
+          cp -f /tmp/anykernel/rtl8188fufw.bin /vendor/firmware/rtlwifi/ 2>/dev/null || true
+          cp -f /tmp/anykernel/rtl8188fufw.bin /system/etc/firmware/rtlwifi/ 2>/dev/null || true
+          cp -f /tmp/anykernel/rtl8188fufw.bin /lib/firmware/rtlwifi/ 2>/dev/null || true
+          cp -f /tmp/anykernel/rtl8188fufw.bin /etc/firmware/rtlwifi/ 2>/dev/null || true
+
+          # ৫. সব .ko এবং .bin ফাইলের জন্য 644 পারমিশন নিশ্চিত করা
+          chmod 644 /system/lib/modules/rtl8188fu.ko 2>/dev/null || true
+          chmod 644 /vendor/lib/modules/rtl8188fu.ko 2>/dev/null || true
+          chmod 644 /system/vendor/lib/modules/rtl8188fu.ko 2>/dev/null || true
+          chmod 644 /vendor/firmware/rtlwifi/rtl8188fufw.bin 2>/dev/null || true
+          chmod 644 /system/etc/firmware/rtlwifi/rtl8188fufw.bin 2>/dev/null || true
+          chmod 644 /lib/firmware/rtlwifi/rtl8188fufw.bin 2>/dev/null || true
+          chmod 644 /etc/firmware/rtlwifi/rtl8188fufw.bin 2>/dev/null || true
+
+          ui_print " ";
+          ui_print "============================================";
+          ui_print " FLASH COMPLETE! POWERED BY PLABON ROY ";
+          ui_print "============================================";
+          ui_print " ";
+          EOF
+
+      # ৪. সম্পূর্ণ নেটহান্টার ড্রাইভার, প্লাবন ভাইয়ের অল-ইন-ওয়ান হ্যাকিং টুলস ও পারফরম্যান্স কনফিগারেশন
+      - name: Configure All NetHunter & Performance Drivers
+        run: |
+          # Lexer ফিক্স
+          sed -i 's/YYLTYPE yylloc;/extern YYLTYPE yylloc;/' kernel/scripts/dtc/dtc-lexer.lex.c_shipped || true
+          sed -i 's/YYLTYPE yylloc;/extern YYLTYPE yylloc;/' kernel/scripts/dtc/dtc-lexer.l || true
+          
+          # GCC 5.1 রিকোয়ারমেন্ট বাইপাস
+          find kernel/include/ -type f -name "compiler*.h" -exec sed -i 's/GCC_VERSION < 50100/GCC_VERSION < 40900/g' {} + || true
+          find kernel/include/ -type f -name "compiler*.h" -exec sed -i '/Sorry, your version of GCC is too old/d' {} + || true
+          
+          # নিখুঁত কার্নেল নাম (m11q_open_defconfig এ)
+          sed -i 's/CONFIG_LOCALVERSION=.*/CONFIG_LOCALVERSION="-NetHunter-Titan-OC-2.0G-650M-by-Plabon"/' kernel/arch/arm64/configs/m11q_open_defconfig
+          
+          # স্যামসাং থার্মাল ও নক্স ওভাররাইড (ভোল্টেজ স্কেলিং ঠিক রাখতে CPR অন রাখা হয়েছে)
+          echo "CONFIG_SEC_THERMAL=n" >> kernel/arch/arm64/configs/m11q_open_defconfig
+          echo "CONFIG_SEC_RESTRICT_FORK=n" >> kernel/arch/arm64/configs/m11q_open_defconfig
+          echo "CONFIG_TIMA=n" >> kernel/arch/arm64/configs/m11q_open_defconfig
+          sed -i 's/CONFIG_CPU_FREQ_DEFAULT_GOV_SCHEDUTIL=y/# CONFIG_CPU_FREQ_DEFAULT_GOV_SCHEDUTIL is not set/g' kernel/arch/arm64/configs/m11q_open_defconfig || true
+          echo "CONFIG_CPU_FREQ_DEFAULT_GOV_PERFORMANCE=y" >> kernel/arch/arm64/configs/m11q_open_defconfig
+          
+          # KernelSU এবং OverlayFS ফ্ল্যাগ নিশ্চিত করা
+          echo "CONFIG_KSU=y" >> kernel/arch/arm64/configs/m11q_open_defconfig
+          echo "CONFIG_OVERLAY_FS=y" >> kernel/arch/arm64/configs/m11q_open_defconfig
+          
+          export PATH="$(pwd)/gcc64/bin:$(pwd)/gcc32/bin:$PATH"
+          export HOSTCFLAGS="-fcommon"
+          export HOSTCXXFLAGS="-fcommon"
+          cd kernel
+          export ARCH=arm64
+          export SUBARCH=arm64
+          
+          # বেস ডিফকনফিগ লোড (m11q_open_defconfig)
+          make O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-android- HOSTCFLAGS="-fcommon" HOSTCXXFLAGS="-fcommon" m11q_open_defconfig
+          
+          # [১] সিপিইউ ও জিপিইউ পারফরম্যান্স গভর্ণর
+          ./scripts/config --file out/.config --enable CONFIG_CPU_BOOST
+          ./scripts/config --file out/.config --enable CONFIG_CPU_FREQ_GOV_PERFORMANCE
+          ./scripts/config --file out/.config --enable CONFIG_DEVFREQ_GOV_PERFORMANCE
+          ./scripts/config --file out/.config --enable CONFIG_DEVFREQ_GOV_QCOM_ADRENO_TZ
+          ./scripts/config --file out/.config --enable CONFIG_OVERLAY_FS
+          ./scripts/config --file out/.config --enable CONFIG_KSU
+          
+          # [২] Chroot, সিস্টেম কোর ও QEMU ইমুলেশন
+          ./scripts/config --file out/.config --enable CONFIG_SYSVIPC
+          ./scripts/config --file out/.config --enable CONFIG_SYSVIPC_SYSCTL
+          ./scripts/config --file out/.config --enable CONFIG_POSIX_MQUEUE
+          ./scripts/config --file out/.config --enable CONFIG_POSIX_MQUEUE_SYSCTL
+          ./scripts/config --file out/.config --enable CONFIG_CROSS_MEMORY_ATTACH
+          ./scripts/config --file out/.config --enable CONFIG_NAMESPACES
+          ./scripts/config --file out/.config --enable CONFIG_UTS_NS
+          ./scripts/config --file out/.config --enable CONFIG_IPC_NS
+          ./scripts/config --file out/.config --enable CONFIG_USER_NS
+          ./scripts/config --file out/.config --enable CONFIG_PID_NS
+          ./scripts/config --file out/.config --enable CONFIG_NET_NS
+          ./scripts/config --file out/.config --enable CONFIG_DEVTMPFS
+          ./scripts/config --file out/.config --enable CONFIG_DEVTMPFS_MOUNT
+          ./scripts/config --file out/.config --enable CONFIG_IKCONFIG
+          ./scripts/config --file out/.config --enable CONFIG_IKCONFIG_PROC
+          ./scripts/config --file out/.config --enable CONFIG_BINFMT_MISC
+          
+          # [৩] সম্পূর্ণ ব্লুটুথ ড্রাইভ (Internal HCI0 + External USB HCI1 Dongles)
+          ./scripts/config --file out/.config --enable CONFIG_BT
+          ./scripts/config --file out/.config --enable CONFIG_BT_BREDR
+          ./scripts/config --file out/.config --enable CONFIG_BT_LE
+          ./scripts/config --file out/.config --enable CONFIG_BT_6LOWPAN
+          ./scripts/config --file out/.config --enable CONFIG_BT_RFCOMM
+          ./scripts/config --file out/.config --enable CONFIG_BT_RFCOMM_TTY
+          ./scripts/config --file out/.config --enable CONFIG_BT_BNEP
+          ./scripts/config --file out/.config --enable CONFIG_BT_BNEP_MC_FILTER
+          ./scripts/config --file out/.config --enable CONFIG_BT_BNEP_PROTO_FILTER
+          ./scripts/config --file out/.config --enable CONFIG_BT_HIDP
+          ./scripts/config --file out/.config --enable CONFIG_BT_HCIBTUSB
+          ./scripts/config --file out/.config --enable CONFIG_BT_HCIBTUSB_BCM
+          ./scripts/config --file out/.config --enable CONFIG_BT_HCIBTUSB_RTL
+          ./scripts/config --file out/.config --enable CONFIG_BT_HCIBTSDIO
+          ./scripts/config --file out/.config --enable CONFIG_BT_HCIUART
+          ./scripts/config --file out/.config --enable CONFIG_BT_HCIUART_H4
+          ./scripts/config --file out/.config --enable CONFIG_BT_HCIUART_BCSP
+          ./scripts/config --file out/.config --enable CONFIG_BT_HCIUART_ATH3K
+          ./scripts/config --file out/.config --enable CONFIG_BT_HCIUART_LL
+          ./scripts/config --file out/.config --enable CONFIG_BT_HCIUART_3WIRE
+          ./scripts/config --file out/.config --enable CONFIG_BT_HCIUART_INTEL
+          ./scripts/config --file out/.config --enable CONFIG_BT_HCIUART_BCM
+          ./scripts/config --file out/.config --enable CONFIG_BT_HCIUART_QCA
+          ./scripts/config --file out/.config --enable CONFIG_BT_HCIBCM203X
+          ./scripts/config --file out/.config --enable CONFIG_BT_HCIBPA10X
+          ./scripts/config --file out/.config --enable CONFIG_BT_HCIBFUSB
+          ./scripts/config --file out/.config --enable CONFIG_BT_HCIVHCI
+          ./scripts/config --file out/.config --enable CONFIG_BT_MRVL
+          ./scripts/config --file out/.config --enable CONFIG_BT_MRVL_SDIO
+          ./scripts/config --file out/.config --enable CONFIG_BT_ATH3K
+          
+          # [৪] ওয়্যারলেস ফ্রেমওয়ার্ক, প্যাকেট ইনজেকশন ও নেটওয়ার্ক ইন্টারফেস
+          ./scripts/config --file out/.config --enable CONFIG_NETDEVICES
+          ./scripts/config --file out/.config --enable CONFIG_WLAN
+          ./scripts/config --file out/.config --enable CONFIG_WIRELESS
+          ./scripts/config --file out/.config --enable CONFIG_WIRELESS_EXT
+          ./scripts/config --file out/.config --enable CONFIG_WEXT_CORE
+          ./scripts/config --file out/.config --enable CONFIG_WEXT_PROC
+          ./scripts/config --file out/.config --enable CONFIG_WEXT_SPY
+          ./scripts/config --file out/.config --enable CONFIG_WEXT_PRIV
+          ./scripts/config --file out/.config --enable CONFIG_CFG80211
+          ./scripts/config --file out/.config --enable CONFIG_CFG80211_WEXT
+          ./scripts/config --file out/.config --enable CONFIG_LIB80211
+          ./scripts/config --file out/.config --enable CONFIG_LIB80211_CRYPT_WEP
+          ./scripts/config --file out/.config --enable CONFIG_LIB80211_CRYPT_CCMP
+          ./scripts/config --file out/.config --enable CONFIG_LIB80211_CRYPT_TKIP
+          ./scripts/config --file out/.config --enable CONFIG_MAC80211
+          ./scripts/config --file out/.config --enable CONFIG_MAC80211_RC_DEFAULT_MINSTREL
+          ./scripts/config --file out/.config --set-str CONFIG_MAC80211_RC_DEFAULT "minstrel_ht"
+          ./scripts/config --file out/.config --enable CONFIG_MAC80211_RC_MINSTREL
+          ./scripts/config --file out/.config --enable CONFIG_MAC80211_RC_MINSTREL_HT
+          ./scripts/config --file out/.config --enable CONFIG_MAC80211_MESH
+          ./scripts/config --file out/.config --enable CONFIG_MAC80211_LEDS
+          ./scripts/config --file out/.config --enable CONFIG_MAC80211_DEBUGFS
+          ./scripts/config --file out/.config --enable CONFIG_CRYPTO_ARC4
+          ./scripts/config --file out/.config --enable CONFIG_CRYPTO_ECB
+          ./scripts/config --file out/.config --enable CONFIG_CRYPTO_AES
+          ./scripts/config --file out/.config --enable CONFIG_CRYPTO_CCM
+          ./scripts/config --file out/.config --enable CONFIG_CRYPTO_GCM
+          ./scripts/config --file out/.config --enable CONFIG_CRC_CCITT
+          
+          # [৫] অল এক্সটারনাল ওয়াইফাই অ্যাডাপ্টার ড্রাইভারস (Atheros, Ralink, Realtek, MediaTek)
+          ./scripts/config --file out/.config --enable CONFIG_WLAN_VENDOR_ATH
+          ./scripts/config --file out/.config --enable CONFIG_ATH_CARDS
+          ./scripts/config --file out/.config --enable CONFIG_ATH_COMMON
+          ./scripts/config --file out/.config --enable CONFIG_ATH9K_HW
+          ./scripts/config --file out/.config --enable CONFIG_ATH9K_COMMON
+          ./scripts/config --file out/.config --enable CONFIG_ATH9K_HTC
+          ./scripts/config --file out/.config --enable CONFIG_ATH9K_HTC_DEBUGFS
+          ./scripts/config --file out/.config --enable CONFIG_CARL9170
+          ./scripts/config --file out/.config --enable CONFIG_CARL9170_LEDS
+          ./scripts/config --file out/.config --enable CONFIG_CARL9170_WPC
+          ./scripts/config --file out/.config --enable CONFIG_CARL9170_HWRNG
+          ./scripts/config --file out/.config --enable CONFIG_AR5523
+          ./scripts/config --file out/.config --enable CONFIG_ATH6KL
+          ./scripts/config --file out/.config --enable CONFIG_ATH6KL_USB
+          ./scripts/config --file out/.config --enable CONFIG_WLAN_VENDOR_RALINK
+          ./scripts/config --file out/.config --enable CONFIG_RT2X00
+          ./scripts/config --file out/.config --enable CONFIG_RT2X00_LIB
+          ./scripts/config --file out/.config --enable CONFIG_RT2X00_LIB_USB
+          ./scripts/config --file out/.config --enable CONFIG_RT2X00_LIB_FIRMWARE
+          ./scripts/config --file out/.config --enable CONFIG_RT2X00_LIB_CRYPTO
+          ./scripts/config --file out/.config --enable CONFIG_RT2X00_LIB_LEDS
+          ./scripts/config --file out/.config --enable CONFIG_RT2800USB
+          ./scripts/config --file out/.config --enable CONFIG_RT2800USB_RT33XX
+          ./scripts/config --file out/.config --enable CONFIG_RT2800USB_RT35XX
+          ./scripts/config --file out/.config --enable CONFIG_RT2800USB_RT53XX
+          ./scripts/config --file out/.config --enable CONFIG_RT2800USB_UNKNOWN
+          ./scripts/config --file out/.config --enable CONFIG_RT2500USB
+          ./scripts/config --file out/.config --enable CONFIG_RT73USB
+          ./scripts/config --file out/.config --enable CONFIG_WLAN_VENDOR_MEDIATEK
+          ./scripts/config --file out/.config --enable CONFIG_MT7601U
+          ./scripts/config --file out/.config --enable CONFIG_WLAN_VENDOR_REALTEK
+          ./scripts/config --file out/.config --enable CONFIG_RTL_CARDS
+          ./scripts/config --file out/.config --enable CONFIG_RTL8187
+          ./scripts/config --file out/.config --enable CONFIG_RTL8187_LEDS
+          ./scripts/config --file out/.config --enable CONFIG_RTL8192CU
+          ./scripts/config --file out/.config --enable CONFIG_RTL8XXXU
+          ./scripts/config --file out/.config --enable CONFIG_RTL8XXXU_UNTESTED
+          ./scripts/config --file out/.config --enable CONFIG_R8188EU
+          ./scripts/config --file out/.config --enable CONFIG_WLAN_VENDOR_ZYDAS
+          ./scripts/config --file out/.config --enable CONFIG_ZD1211RW
+          
+          # [৬] BadUSB, DuckHunter & HID Gadget
+          ./scripts/config --file out/.config --enable CONFIG_USB_SUPPORT
+          ./scripts/config --file out/.config --enable CONFIG_USB_GADGET
+          ./scripts/config --file out/.config --enable CONFIG_USB_CONFIGFS
+          ./scripts/config --file out/.config --enable CONFIG_USB_LIBCOMPOSITE
+          ./scripts/config --file out/.config --enable CONFIG_USB_F_HID
+          ./scripts/config --file out/.config --enable CONFIG_USB_CONFIGFS_F_HID
+          ./scripts/config --file out/.config --enable CONFIG_USB_CONFIGFS_F_FS
+          ./scripts/config --file out/.config --enable CONFIG_USB_CONFIGFS_MASS_STORAGE
+          ./scripts/config --file out/.config --enable CONFIG_USB_HID
+          ./scripts/config --file out/.config --enable CONFIG_UHID
+          
+          # [৭] USB LAN / Ethernet Adapters
+          ./scripts/config --file out/.config --enable CONFIG_USB_USBNET
+          ./scripts/config --file out/.config --enable CONFIG_USB_NET_AX8817X
+          ./scripts/config --file out/.config --enable CONFIG_USB_NET_AX88179_178A
+          ./scripts/config --file out/.config --enable CONFIG_USB_NET_CDCETHER
+          ./scripts/config --file out/.config --enable CONFIG_USB_NET_CDC_NCM
+          ./scripts/config --file out/.config --enable CONFIG_USB_NET_RNDIS_HOST
+          ./scripts/config --file out/.config --enable CONFIG_USB_NET_RTL8152
+          ./scripts/config --file out/.config --enable CONFIG_USB_RTL8150
+          
+          # [৮] SDR, HackRF, RTL-SDR & CAN Bus
+          ./scripts/config --file out/.config --enable CONFIG_MEDIA_SUPPORT
+          ./scripts/config --file out/.config --enable CONFIG_MEDIA_DIGITAL_TV_SUPPORT
+          ./scripts/config --file out/.config --enable CONFIG_MEDIA_SDR_SUPPORT
+          ./scripts/config --file out/.config --enable CONFIG_DVB_CORE
+          ./scripts/config --file out/.config --enable CONFIG_DVB_RTL2830
+          ./scripts/config --file out/.config --enable CONFIG_DVB_RTL2832
+          ./scripts/config --file out/.config --enable CONFIG_DVB_RTL2832_SDR
+          ./scripts/config --file out/.config --enable CONFIG_USB_HACKRF
+          ./scripts/config --file out/.config --enable CONFIG_USB_AIRSPY
+          ./scripts/config --file out/.config --enable CONFIG_CAN
+          ./scripts/config --file out/.config --enable CONFIG_CAN_RAW
+          ./scripts/config --file out/.config --enable CONFIG_CAN_BCM
+          ./scripts/config --file out/.config --enable CONFIG_CAN_VCAN
+          ./scripts/config --file out/.config --enable CONFIG_CAN_SLCAN
+          ./scripts/config --file out/.config --enable CONFIG_CAN_DEV
+          ./scripts/config --file out/.config --enable CONFIG_CDROM_PKTCDVD
+          
+          # [৯] স্পেশাল Netfilter, TUN/TAP, Bridge ও EvilTwin CONNMARK ফিক্স প্যাচ
+          ./scripts/config --file out/.config --enable CONFIG_TUN
+          ./scripts/config --file out/.config --enable CONFIG_BRIDGE
+          ./scripts/config --file out/.config --enable CONFIG_LLC
+          ./scripts/config --file out/.config --enable CONFIG_STP
+          ./scripts/config --file out/.config --enable CONFIG_NETFILTER_XT_MATCH_CONNMARK
+          ./scripts/config --file out/.config --enable CONFIG_NETFILTER_XT_TARGET_CONNMARK
+          ./scripts/config --file out/.config --enable CONFIG_NETFILTER_XT_TARGET_CONNSECMARK
+          ./scripts/config --file out/.config --enable CONFIG_NETFILTER_XT_MATCH_MARK
+          ./scripts/config --file out/.config --enable CONFIG_NETFILTER_XT_TARGET_MARK
+          ./scripts/config --file out/.config --enable CONFIG_NETFILTER_XT_TARGET_REDIRECT
+          ./scripts/config --file out/.config --enable CONFIG_IP_NF_TARGET_REDIRECT
+          ./scripts/config --file out/.config --enable CONFIG_NF_CONNTRACK_MARK
+          ./scripts/config --file out/.config --enable CONFIG_NF_CONNTRACK_SECMARK
+          ./scripts/config --file out/.config --enable CONFIG_IP_NF_MATCH_RPFILTER
+          ./scripts/config --file out/.config --enable CONFIG_IP6_NF_MATCH_RPFILTER
+          
+          # সমস্ত ডিপেন্ডেন্সি অটো-লক করা
+          make O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-android- HOSTCFLAGS="-fcommon" HOSTCXXFLAGS="-fcommon" olddefconfig
+          cd ..
+
+      # ৫. সম্পূর্ণ কার্নেল ও ডেডিকেটেড DTB একসাথে কম্পাইলেশন
+      - name: Compile Ultimate NetHunter Kernel
+        run: |
+          export PATH="$(pwd)/gcc64/bin:$(pwd)/gcc32/bin:$PATH"
+          export HOSTCFLAGS="-fcommon"
+          export HOSTCXXFLAGS="-fcommon"
+          cd kernel
+          export ARCH=arm64
+          export SUBARCH=arm64
+          
+          # কার্নেল ও আপনার নতুন ওভারক্লকড DTB একসাথে মেক করা
+          make -j$(nproc --all) O=out \
+               ARCH=arm64 \
+               CROSS_COMPILE=aarch64-linux-android- \
+               CROSS_COMPILE_ARM32=arm-linux-androideabi- \
+               HOSTCFLAGS="-fcommon" \
+               HOSTCXXFLAGS="-fcommon" Image.gz dtbs
+          cd ..
+
+      # ৬. স্পেশাল আনলকড ও ম্যাক্স-পাওয়ার RTL8188FU ওয়াইফাই ড্রাইভার বিল্ড
+      - name: Build and Package Dedicated RTL8188FU Unrestricted Driver
+        run: |
+          export PATH="$(pwd)/gcc64/bin:$(pwd)/gcc32/bin:$PATH"
+          git clone https://github.com/kelebek333/rtl8188fu rtl8188fu
+          cd rtl8188fu
+          
+          # মনিটর মোড অন ও পাওয়ার সেভিং সম্পূর্ণ ডিজেবল
+          sed -i 's/CONFIG_POWER_SAVING = y/CONFIG_POWER_SAVING = n/' Makefile
+          sed -i 's/CONFIG_WIFI_MONITOR = n/CONFIG_WIFI_MONITOR = y/' Makefile
+          
+          cat << 'EOF' >> include/autoconf.h
+          /* Ultimate Unrestricted NetHunter Network Driver by Plabon */
+          #undef CONFIG_POWER_SAVING
+          #define CONFIG_POWER_SAVING 0
+          #define CONFIG_WIFI_MONITOR 1
+          #define CONFIG_WIRELESS_EXT 1
+          #define CONFIG_USB_AUTOSUSPEND 0
+          #define CONFIG_RTW_DEBUG 0
+          #define CONFIG_MP_MODE 0
+          #define CONFIG_GLOBAL_UI_PID 1
+          #define CONFIG_LAYER2_ROAMING 0
+          #define CONFIG_TX_AC_LIFETIME 0
+          #define CONFIG_PROBE_REQ_REPORT 1
+          #define CONFIG_RETRY_LIMIT 0
+          #define CONFIG_FORCE_BCN_TX_INT 1
+          #define CONFIG_IOCTL_CFG80211 1
+          #define CONFIG_BR_EXT 1
+          #define CONFIG_IEEE80211W 1
+          #define CONFIG_TX_PWR_BY_RATE 0
+          #define CONFIG_TX_PWR_LMT 0
+          #define CONFIG_FORCE_TX_PWR_DBM 35
+          #define CONFIG_BUFF_TX_MAX 1
+          #define CONFIG_CCA_MAX_TH 0
+          #define CONFIG_DISABLE_SCAN_ROAM 1
+          #define CONFIG_FORCE_INJECTION_TIMING 1
+          #define CONFIG_RAW_TX_FRAME_INJECT 1
+          EOF
+
+          # লিনাক্স ৪.৯ সংস্করণের জন্য ওয়াইফাই অটো-রোমিং ফাংশন ফিক্স
+          python3 -c '
+          import re
+          path = "os_dep/linux/ioctl_cfg80211.c"
+          with open(path, "r") as f:
+              text = f.read()
+          text = re.sub(r"cfg80211_roamed\s*\([^;]*\);", "/* removed roaming */", text, flags=re.DOTALL)
+          with open(path, "w") as f:
+              f.write(text)
+          '
+
+          # ড্রাইভার মডিউল কম্পাইল করা
+          make -j$(nproc --all) ARCH=arm64 CROSS_COMPILE=aarch64-linux-android- KSRC=../kernel/out modules
+          cd ..
+
+          # ড্রাইভার ও ফার্মওয়্যার জিপ ফোল্ডারে পাঠানো
+          cp rtl8188fu/rtl8188fu.ko AnyKernel3/
+          cp rtl8188fu/firmware/rtl8188fufw.bin AnyKernel3/
+
+      # ৭. ১০০% সেইফ কার্নেল প্যাকেজিং (DTB ফিক্স: নতুন ওভারক্লকড DTB সরাসরি AnyKernel3-তে ইনজেক্ট করা)
+      - name: Prepare Clean & Safe Flashable AnyKernel3 Package
+        run: |
+          # ১. ডাইনামিকালি Image.gz খুঁজে নেওয়া
+          IMAGE_FILE=$(find kernel/out/ -type f -name "Image.gz" | head -n 1)
+          if [ -z "$IMAGE_FILE" ]; then
+            IMAGE_FILE="kernel/out/arch/arm64/boot/Image.gz"
+          fi
+
+          # ২. M11 এর জন্য তৈরি হওয়া আসল নতুন ওভারক্লকড DTB খুঁজে নেওয়া
+          DTB_OVERCLOCK=$(find kernel/out/arch/arm64/boot/dts/ -name "*sdm450*.dtb" -o -name "*m11q*.dtb" | head -n 1)
+
+          # ৩. AnyKernel3 যাতে রমের পুরোনো স্টক DTB ব্যবহার না করে, সেজন্য নতুন DTB কপি করা
+          if [ -n "$DTB_OVERCLOCK" ]; then
+            echo "[+] Injecting New Overclocked DTB into AnyKernel3..."
+            cp "$DTB_OVERCLOCK" AnyKernel3/dtb
+            cat "$IMAGE_FILE" "$DTB_OVERCLOCK" > AnyKernel3/Image.gz-dtb
+          else
+            echo "[!] Fallback: Appending available DTB files..."
+            cat "$IMAGE_FILE" $(find kernel/out/ -type f -name "*.dtb") > AnyKernel3/Image.gz-dtb
+          fi
+          
+          # ৪. এক্সট্রা ইমেজ ক্লিন করা
+          rm -f AnyKernel3/Image.gz AnyKernel3/zImage AnyKernel3/Image
+          rm -rf AnyKernel3/.git AnyKernel3/README.md AnyKernel3/*placeholder
+
+      # ৮. সরাসরি ১৮ MB-র সিঙ্গেল ফ্ল্যাশেবল জিপ আপলোড
+      - name: Upload Single Ready-To-Flash NetHunter Zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kali-NetHunter-Titan-OC-Master
+          path: AnyKernel3/
